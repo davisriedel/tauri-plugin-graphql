@@ -218,14 +218,12 @@ use async_graphql::{
 use serde::Deserialize;
 #[cfg(feature = "graphiql")]
 use std::net::SocketAddr;
-use tauri::{
-  plugin::{self, TauriPlugin},
-  Invoke, InvokeError, Manager, Runtime,
-};
+use tauri::{plugin::{self, TauriPlugin}, ipc::{Invoke, InvokeError}, Manager, Runtime};
+use tauri::ipc::InvokeBody;
 
 fn invoke_handler<R, Query, Mutation, Subscription>(
   schema: Schema<Query, Mutation, Subscription>,
-) -> impl Fn(Invoke<R>)
+) -> (impl Fn(Invoke<R>) -> bool + Send + Sync + 'static)
 where
   R: Runtime,
   Query: ObjectType + 'static,
@@ -239,28 +237,34 @@ where
 
     match invoke.message.command() {
       "graphql" => invoke.resolver.respond_async(async move {
-        let req: BatchRequest = serde_json::from_value(invoke.message.payload().clone())
-          .map_err(InvokeError::from_serde_json)?;
+        let InvokeBody::Json(json_payload) = invoke.message.payload().clone() else {
+          return Err(InvokeError::from("Invalid payload."));
+        };
+        let req: BatchRequest = serde_json::from_value(json_payload)
+          .map_err(InvokeError::from_error)?;
 
         let resp = schema
-          .execute_batch(req.data(window.app_handle()).data(window))
+          .execute_batch(req.data(window.app_handle().clone()).data(window.clone()))
           .await;
 
-        let str = serde_json::to_string(&resp).map_err(InvokeError::from_serde_json)?;
+        let str = serde_json::to_string(&resp).map_err(InvokeError::from_error)?;
 
         Ok((str, resp.is_ok()))
       }),
       "subscriptions" => invoke.resolver.respond_async(async move {
-        let req: SubscriptionRequest = serde_json::from_value(invoke.message.payload().clone())
-          .map_err(InvokeError::from_serde_json)?;
+        let InvokeBody::Json(json_payload) = invoke.message.payload().clone() else {
+          return Err(InvokeError::from("Invalid payload."));
+        };
+        let req: SubscriptionRequest = serde_json::from_value(json_payload)
+          .map_err(InvokeError::from_error)?;
 
         let subscription_window = window.clone();
-        let mut stream = schema.execute_stream(req.inner.data(window.app_handle()).data(window));
+        let mut stream = schema.execute_stream(req.inner.data(window.app_handle().clone()).data(window.clone()));
 
         let event_id = &format!("graphql://{}", req.id);
 
         while let Some(result) = stream.next().await {
-          let str = serde_json::to_string(&result).map_err(InvokeError::from_serde_json)?;
+          let str = serde_json::to_string(&result).map_err(InvokeError::from_error)?;
 
           subscription_window.emit(event_id, str)?;
         }
@@ -272,7 +276,9 @@ where
         "Invalid endpoint \"{}\". Valid endpoints are: \"graphql\", \"subscriptions\".",
         cmd
       )),
-    }
+    };
+
+    true
   }
 }
 
@@ -394,7 +400,7 @@ where
 
   plugin::Builder::new("graphql")
     .invoke_handler(invoke_handler(schema.clone()))
-    .setup(move |_| {
+    .setup(move |_, _| {
       let graphql_post = async_graphql_warp::graphql(schema).and_then(
         |(schema, request): (
           Schema<Query, Mutation, Subscription>,
