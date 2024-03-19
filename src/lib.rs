@@ -231,7 +231,7 @@ where
   Subscription: SubscriptionType + 'static,
 {
   move |invoke| {
-    let window = invoke.message.window();
+    let window = invoke.message.webview().window();
 
     let schema = schema.clone();
 

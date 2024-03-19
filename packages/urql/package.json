@@ -22,7 +22,7 @@
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@tauri-apps/api": "^1.0.0",
+    "@tauri-apps/api": "2.0.0-alpha.8",
     "@urql/core": "^3.0.0",
     "wonka": "^6.0.0"
   },
