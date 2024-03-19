@@ -1,17 +1,14 @@
-import {invoke} from '@tauri-apps/api'
-import {listen, Event} from '@tauri-apps/api/event'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, Event } from '@tauri-apps/api/event'
 import {
   Exchange,
   makeErrorResult,
   makeResult,
   Operation,
-  OperationResult
+  OperationResult,
+  SubscriptionForwarder
 } from '@urql/core'
-import {
-  ObserverLike,
-  SubscriptionOperation
-} from '@urql/core/dist/types/exchanges/subscription'
-import {ExecutionResult, print} from 'graphql'
+import {ASTNode, print} from 'graphql'
 import {
   filter,
   make,
@@ -54,7 +51,7 @@ export const invokeExchange: Exchange = ({forward}) => {
         )
 
         const args = {
-          query: print(operation.query),
+          query: print(operation.query as ASTNode),
           variables: operation.variables || undefined
         }
 
@@ -100,11 +97,6 @@ export const invokeExchange: Exchange = ({forward}) => {
     return merge([fetchResults$, forward$])
   }
 }
-
-/**
- * @deprecated Use `invokeExchange` instead
- */
-export const tauriExchange = invokeExchange
 
 type Response = [body: string, isOk: boolean]
 
@@ -174,24 +166,26 @@ function makeInvokeSource(
  * @param sink The sink that will receive the stream of subscription results
  * @returns
  */
-export function subscribe(
-  operation: SubscriptionOperation,
-  sink: ObserverLike<ExecutionResult>
-) {
-  let unlisten: () => void = () => {}
+export const subscribe: SubscriptionForwarder = (_, operation) => {
+  return {
+    subscribe: (sink) => {
+      let unsubscribe: () => void = () => {}
 
-  const id = Math.floor(Math.random() * 10000000)
+      const id = Math.floor(Math.random() * 10000000)
 
-  Promise.resolve()
-    .then(async () =>
-      listen(`graphql://${id}`, (event: Event<string | null>) => {
-        if (event.payload === null) return sink.complete()
-        sink.next(JSON.parse(event.payload))
-      })
-    )
-    .then(_unlisten => (unlisten = _unlisten))
-    .then(() => invoke('plugin:graphql|subscriptions', {...operation, id}))
-    .catch(err => console.error(err))
+      Promise.resolve()
+        .then(async () =>
+          listen(`graphql://${id}`, (event: Event<string | null>) => {
+            if (event.payload === null) return sink.complete()
+            sink.next(JSON.parse(event.payload))
+          })
+        )
+        .then(u => (unsubscribe = u))
+        .then(() => invoke('plugin:graphql|subscriptions', {...operation, id}))
+        .catch(err => console.error(err))
 
-  return unlisten
+      return { unsubscribe }
+    }
+  }
 }
+
