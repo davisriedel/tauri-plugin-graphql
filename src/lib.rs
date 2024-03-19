@@ -231,7 +231,7 @@ where
   Subscription: SubscriptionType + 'static,
 {
   move |invoke| {
-    let window = invoke.message.window();
+    let window = invoke.message.webview().window();
 
     let schema = schema.clone();
 
@@ -400,7 +400,7 @@ where
 
   plugin::Builder::new("graphql")
     .invoke_handler(invoke_handler(schema.clone()))
-    .setup(move |_| {
+    .setup(move |_, _| {
       let graphql_post = async_graphql_warp::graphql(schema).and_then(
         |(schema, request): (
           Schema<Query, Mutation, Subscription>,
