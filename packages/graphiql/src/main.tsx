@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { GraphiQL } from 'graphiql'
 import { createGraphiQLFetcher } from '@graphiql/create-fetcher'
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
 async function invokeFetch(_url: globalThis.RequestInfo | URL, options: globalThis.RequestInit) {
